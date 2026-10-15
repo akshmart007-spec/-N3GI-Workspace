@@ -898,7 +898,7 @@ main {
 #qrm.show{display:grid}
 #qrb{background:var(--sb);color:var(--ink);padding:20px;border-radius:14px;width:min(94vw,360px);display:flex;flex-direction:column;gap:12px;align-items:center;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.25)}
 #qrc{background:#fff;padding:12px;border-radius:10px;min-width:204px;min-height:204px;display:grid;place-items:center;color:#334155;font-size:13px}
-#qrl,#qin,#qtu,#qtn,#qtc{width:100%;background:var(--ed);border:1px solid var(--line);border-radius:6px;padding:8px;font-size:12px}
+#qrl,#qin{width:100%;background:var(--ed);border:1px solid var(--line);border-radius:6px;padding:8px;font-size:12px}
 #ipn{display:none;position:fixed;z-index:130;background:var(--sb);color:var(--ink);border:1px solid var(--line);border-radius:12px;padding:8px;box-shadow:var(--shadow-lg);flex-direction:column;gap:6px;font-size:12px;width:min(92vw,290px)}
 #ipn.show{display:flex}
 #ipn .ir{display:flex;gap:5px;align-items:center;flex-wrap:wrap}
@@ -1436,16 +1436,11 @@ function coff(){var s=getSelection();if(!s.rangeCount||!ed.contains(s.anchorNode
 function soff(o){if(o<0)return;var w=document.createTreeWalker(ed,NodeFilter.SHOW_TEXT),n,c=0;while((n=w.nextNode())){var l=n.nodeValue.length;if(c+l>=o){var r=document.createRange();r.setStart(n,o-c);r.collapse(true);var s=getSelection();s.removeAllRanges();s.addRange(r);return}c+=l}}
 window.N3N={
  cur:function(){var n=cur();return(n&&!n.enc)?{id:n.id,sk:n.sk,title:$('ttl').value,html:ed.innerHTML}:null},
- mark:function(){var n=cur();if(!n||n.enc)return null;if(!n.sk){n.sk=n.id;store()}return n.sk},
- curKey:function(){var n=cur();return(n&&n.sk&&!n.enc)?n.sk:null},
- keys:function(){return S.notes.filter(function(x){return x.sk&&!x.enc}).map(function(x){return x.sk})},
- get:function(k){var n=S.notes.filter(function(x){return x.sk===k})[0];if(!n||n.enc)return null;var live=(n.id===S.cur);
-  return{k:k,title:live?$('ttl').value:n.title,html:live?ed.innerHTML:(n.html||''),ts:n.upd||0}},
- put:function(k,title,html,ts){var n=S.notes.filter(function(x){return x.sk===k})[0];
-  if(!n){n=mk(title||'Shared note');n.sk=k;n.html=html;n.txt=strip(html).slice(0,3000);n.upd=ts||Date.now();S.notes.push(n);open(n.id);return}
-  if(n.enc)return;
-  n.title=title||n.title;n.html=html;n.txt=strip(html).slice(0,3000);n.upd=ts||Date.now();
-  if(n.id===S.cur){var f=document.activeElement===ed,o=f?coff():-1;if(ed.innerHTML!==html){ed.innerHTML=html;if(f)soff(o);hl()}$('ttl').value=n.title;stats()}
+ mark:function(k){var n=cur();if(n){n.sk=k;store()}},
+ put:function(k,title,html){var n=S.notes.filter(function(x){return x.sk===k})[0];
+  if(!n){n=mk(title||'Shared note');n.sk=k;n.html=html;n.txt=strip(html).slice(0,3000);S.notes.push(n);open(n.id);return}
+  n.title=title||n.title;n.html=html;n.txt=strip(html).slice(0,3000);n.upd=Date.now();
+  if(n.id===S.cur&&!n.enc){var f=document.activeElement===ed,o=f?coff():-1;if(ed.innerHTML!==html){ed.innerHTML=html;if(f)soff(o);hl()}$('ttl').value=n.title;stats()}
   store();list()}
 };
 var hadLS=false;try{hadLS=!!localStorage.getItem(KEY)}catch(e){}
@@ -2323,119 +2318,59 @@ load();
 </script>
 <script>
 (function(){
-var $=function(i){return document.getElementById(i)};
-var AL='ABCDEFGHJKMNPQRSTUVWXYZ23456789',SK='n3gi.sync',TK='n3gi.turn';
-var peer=null,conns=[],role='',CODE='',PID='',tm,rcT=null,editT=0,pend={},pendT={},lastSig={},lastSync=0,jt,stopped=true,tries=0,resumed=false;
-function toast(m){var t=$('toast');t.textContent=m;t.className='s';clearTimeout(toast.t);toast.t=setTimeout(function(){t.className=''},3000)}
+var $=function(i){return document.getElementById(i)},peer=null,conns=[],last='',tm,role='',PID='',CODE='',jt;
+var AL='ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+function toast(m){var t=$('toast');t.textContent=m;t.className='s';clearTimeout(toast.t);toast.t=setTimeout(function(){t.className=''},2800)}
 function lib(u){return new Promise(function(ok,no){var s=document.createElement('script');s.src=u;s.onload=ok;s.onerror=no;document.head.appendChild(s)})}
 function needPeer(){return window.Peer?Promise.resolve():lib('https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js')}
 function needQR(){return window.QRCode?Promise.resolve():lib('https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js')}
 function genCode(){var a=crypto.getRandomValues(new Uint8Array(8)),c='';for(var i=0;i<8;i++)c+=AL[a[i]%AL.length];return c}
-function fmt(c){return c.slice(0,4)+'-'+c.slice(4)}
-function ice(){var a=[{urls:['stun:stun.l.google.com:19302','stun:stun1.l.google.com:19302','stun:stun2.l.google.com:19302']},{urls:'stun:stun.cloudflare.com:3478'},{urls:'stun:global.stun.twilio.com:3478'},
- {urls:['turn:openrelay.metered.ca:80','turn:openrelay.metered.ca:443','turn:openrelay.metered.ca:443?transport=tcp','turns:openrelay.metered.ca:443?transport=tcp'],username:'openrelayproject',credential:'openrelayproject'}];
- try{var t=JSON.parse(localStorage.getItem(TK)||'null');if(t&&t.u)a.unshift({urls:t.u.split(/[\s,]+/).filter(Boolean),username:t.n||'',credential:t.c||''})}catch(e){}return a}
-function oc(){return conns.filter(function(c){return c.open})}
-function send(c,m){try{if(c.open)c.send(m)}catch(e){}}
-function sendAll(m,skip){conns.forEach(function(c){if(c!==skip)send(c,m)})}
+function snap(){var c=N3N.cur();return c&&c.sk?{t:'u',k:c.sk,title:c.title,html:c.html}:null}
 function sig(m){return m.k+'\u0001'+m.title+'\u0001'+m.html}
-function snapMsg(k,r){var g=N3N.get(k);return g?{t:'u',r:r?1:0,k:k,title:g.title,html:g.html,ts:r?g.ts:Date.now()}:null}
-function flush(){var k=N3N.curKey();if(!k)return;var m=snapMsg(k,0);if(!m)return;var sg=sig(m);if(lastSig[k]===sg)return;lastSig[k]=sg;sendAll(m)}
-window.N3changed=function(){editT=Date.now();if(!oc().length)return;clearTimeout(tm);tm=setTimeout(flush,250)};
-/* ---- incoming ---- */
-function commit(m,from){lastSig[m.k]=sig(m);N3N.put(m.k,m.title,m.html,m.ts);lastSync=Date.now();sendAll(m.r?{t:'u',r:0,k:m.k,title:m.title,html:m.html,ts:m.ts}:m,from);ui()}
-function got(m,from){if(!m||m.t!=='u'||!m.k)return;
- if(m.r){var l=N3N.get(m.k);if(l){if(l.ts>(m.ts||0)){var b=snapMsg(m.k,0);if(b)send(from,b);return}if(sig({k:l.k,title:l.title,html:l.html})===sig(m))return}}
- var k=m.k;if(N3N.curKey()===k&&Date.now()-editT<500){pend[k]=[m,from];clearTimeout(pendT[k]);pendT[k]=setTimeout(function(){var p=pend[k];delete pend[k];if(p)commit(p[0],p[1])},560);return}
- commit(m,from)}
-function resync(c){N3N.keys().forEach(function(k){var m=snapMsg(k,1);if(m)send(c,m)})}
-function wire(c){c._ls=Date.now();
- conns.forEach(function(x){if(x!==c&&x.peer===c.peer){try{x.close()}catch(e){}}});conns=conns.filter(function(x){return x===c||x.peer!==c.peer});
- if(conns.indexOf(c)<0)conns.push(c);tries=0;
- c.on('data',function(m){c._ls=Date.now();if(!m)return;if(m.t==='p'){send(c,{t:'o'});return}if(m.t==='o')return;if(m.t==='u')got(m,c)});
- c.on('close',function(){drop(c)});c.on('error',function(){drop(c)});
- resync(c);if(role==='guest'){var qm=$('qrm');if(qm)qm.classList.remove('show')}ui()}
-function drop(c){var i=conns.indexOf(c);if(i<0)return;conns.splice(i,1);ui();if(!stopped&&role==='guest'&&!oc().length)retry()}
-function beat(){conns.slice().forEach(function(c){if(!c.open||Date.now()-(c._ls||0)>12000){try{c.close()}catch(e){}drop(c);return}send(c,{t:'p'})});if(role)saveS();ui()}
-setInterval(beat,4000);
-/* ---- peer lifecycle ---- */
-function saveS(){try{localStorage.setItem(SK,JSON.stringify({role:role,code:CODE,pid:PID,ts:Date.now()}))}catch(e){}}
-function mkPeer(id){var o={debug:0,pingInterval:5000,config:{iceServers:ice(),iceCandidatePoolSize:4}};return id?new Peer(id,o):new Peer(o)}
-function dial(){if(stopped||role!=='guest'||!peer)return;var c=peer.connect(PID,{reliable:true}),done=0;
- jt=setTimeout(function(){if(!done){try{c.close()}catch(e){}retry()}},25000);
- c.on('open',function(){done=1;clearTimeout(jt);wire(c);toast('Connected — live sync ON ✓')});
- c.on('error',function(){if(!done){clearTimeout(jt);retry()}})}
-function retry(){if(stopped||rcT)return;tries++;ui();if(tries>14)return;var d=Math.min(800*Math.pow(1.6,tries),10000);
- rcT=setTimeout(function(){rcT=null;if(stopped)return;if(role==='guest'&&peer&&peer.open&&!peer.disconnected&&!peer.destroyed)dial();else openPeer()},d)}
-function onErr(e){if(stopped)return;var t=e&&e.type;
- if(t==='unavailable-id'&&role==='host'){if(!resumed){CODE=genCode();PID='n3gi-'+CODE;saveS()}return retry()}
- if(t==='peer-unavailable'){if(role==='guest')retry();return}
- if(t==='webrtc')return;
- if(t==='network'||t==='server-error'||t==='socket-error'||t==='socket-closed'||t==='disconnected'){if(!oc().length)retry();return}
- toast('Sync error: '+(t||'unknown'));if(!oc().length)retry()}
-function openPeer(){needPeer().then(function(){if(stopped)return;try{peer&&peer.destroy()}catch(e){}peer=null;
- var p=mkPeer(role==='host'?PID:null);peer=p;ui();
- p.on('open',function(){if(p!==peer)return;if(role==='host'){tries=0;var m=modal();$('qrl').value=link();$('qcode').textContent=fmt(CODE);draw()}else dial();ui()});
- p.on('connection',function(cn){cn.on('open',function(){wire(cn);toast('Device connected ✓')})});
- p.on('disconnected',function(){if(p!==peer||stopped)return;ui();setTimeout(function(){try{if(p===peer&&p.disconnected&&!p.destroyed)p.reconnect()}catch(e){}},1500)});
- p.on('close',function(){if(p===peer&&!stopped&&!oc().length)retry()});
- p.on('error',onErr)},function(){toast('Sync library load nahi hui (internet check karein)');tries=15;ui()})}
-function startHost(code){if(!code&&!N3N.mark())return toast('Locked note sync nahi ho sakta — pehle unlock karein');
- stop(true);stopped=false;role='host';resumed=!!code;CODE=code||genCode();PID='n3gi-'+CODE;tries=0;saveS();if(!code)modal().classList.add('show');openPeer()}
-function join(pid,quiet){stop(true);stopped=false;role='guest';PID=pid;tries=0;saveS();if(!quiet)modal().classList.add('show');openPeer()}
-function stop(quiet){stopped=true;clearTimeout(rcT);rcT=null;clearTimeout(jt);conns.slice().forEach(function(c){try{c.close()}catch(e){}});conns=[];try{peer&&peer.destroy()}catch(e){}peer=null;role='';tries=0;
- try{localStorage.removeItem(SK)}catch(e){}ui();if(!quiet){var m=$('qrm');if(m)m.classList.remove('show');toast('Sync stopped')}}
-function health(){if(stopped||!role)return;tries=0;clearTimeout(rcT);rcT=null;
- if(role==='host'){if(!peer||peer.destroyed)openPeer();else if(peer.disconnected){try{peer.reconnect()}catch(e){}}}
- else if(!oc().length){if(peer&&peer.open&&!peer.disconnected&&!peer.destroyed)dial();else openPeer()}
- conns.forEach(function(c){send(c,{t:'p'})})}
-document.addEventListener('visibilitychange',function(){if(!document.hidden)health()});
-window.addEventListener('online',health);
-/* ---- UI ---- */
+function sendAll(m,skip){conns.forEach(function(c){if(c!==skip&&c.open)c.send(m)})}
+window.N3changed=function(){if(!conns.length)return;clearTimeout(tm);tm=setTimeout(function(){var m=snap();if(!m||sig(m)===last)return;last=sig(m);sendAll(m)},250)};
+function got(m,from){if(!m||m.t!=='u')return;last=sig(m);N3N.put(m.k,m.title,m.html);sendAll(m,from);ui()}
+function wire(c){if(conns.indexOf(c)<0)conns.push(c);c.on('data',function(m){got(m,c)});c.on('close',function(){conns=conns.filter(function(x){return x!==c});ui();toast('Device disconnected')});c.on('error',function(){})}
 function link(){return location.href.split('#')[0]+'#sync='+PID}
-function stateNow(){var n=oc().length;if(!role)return'idle';if(n)return'live';if(tries>14)return'offline';
- if(role==='host')return(peer&&peer.open&&!peer.disconnected)?'waiting':(tries>0?'retry':'connecting');return tries>0?'retry':'connecting'}
-function ui(){var n=oc().length,s=stateNow();
- $('syncBtn').textContent={idle:'📱 Sync',waiting:'🟡 Waiting…',connecting:'🟡 Connecting…',retry:'🟠 Reconnecting…',live:'🟢 Live ('+n+')',offline:'🔴 Offline'}[s];
- if(!$('qrs'))return;var h=role==='host',idle=!role;
- $('qa').style.display=idle?'flex':'none';$('qh').style.display=h?'flex':'none';
- $('qcc').style.display=h?'':'none';$('qrcp').style.display=h?'':'none';
- $('qadd').style.display=(!idle&&N3N.curKey()===null)?'':'none';$('qrst').style.display=idle?'none':'';$('qrt').style.display=(s==='retry'||s==='offline')?'':'none';
- $('qst').textContent={idle:'',waiting:'🟡 Dusre device ka intezaar…',connecting:'🟡 Connecting…',retry:'🟠 Reconnect ho raha hai…',live:'🟢 Live — '+n+' device connected',offline:'🔴 Offline — Retry dabayein'}[s];
- var st='';if(lastSync)st+='Last sync: '+new Date(lastSync).toLocaleTimeString()+'\n';
- if(h&&location.protocol==='file:')st+='⚠ Ye file local hai. QR/link dusre device par tabhi khulega jab file hosted ho (Netlify/GitHub Pages). Code se connect karne ke liye dusre device par bhi ye app kholna hoga.';
- $('qrs').textContent=st}
-function draw(){var b=$('qrc');b.innerHTML='';needQR().then(function(){new QRCode(b,{text:$('qrl').value,width:180,height:180,correctLevel:QRCode.CorrectLevel.M})},function(){b.textContent='QR load nahi hua — code use karein'})}
-function netTest(){var out=$('qnr');out.textContent='Checking… (6s)';var pc;try{pc=new RTCPeerConnection({iceServers:ice()})}catch(e){out.textContent='❌ Is browser mein WebRTC nahi hai';return}
- var t={};pc.createDataChannel('x');pc.onicecandidate=function(e){if(e.candidate){var mm=/ typ (\w+)/.exec(e.candidate.candidate);if(mm)t[mm[1]]=1}};
- pc.createOffer().then(function(o){return pc.setLocalDescription(o)});
- setTimeout(function(){try{pc.close()}catch(e){}
-  out.textContent=t.relay?'✅ Relay (TURN) mil gaya — kisi bhi network par connect hona chahiye.':t.srflx?'🟡 Direct (STUN) chal raha hai — zyadatar networks par chalega. Strict mobile/office network par fail ho sakta hai: TURN add karein ya dono device ek hi Wi-Fi par rakhein.':'🔴 Public address nahi mila — network P2P block kar raha hai. Dono device ek hi Wi-Fi/hotspot par try karein ya TURN add karein.'},6000)}
+function fmt(c){return c.slice(0,4)+'-'+c.slice(4)}
 function modal(){var m=$('qrm');if(m)return m;m=document.createElement('div');m.id='qrm';
- m.innerHTML='<div id="qrb"><h4 style="margin:0;font-size:16px">📱 Live Sync</h4><div id="qst" style="font-size:14px;font-weight:600"></div>'
+ m.innerHTML='<div id="qrb"><h4 style="margin:0;font-size:16px">📱 Live Sync</h4>'
  +'<div id="qa" style="display:flex;flex-direction:column;gap:8px;width:100%"><button class="nb" id="qsh">📤 Share this note (QR + code)</button><div style="color:var(--mut);font-size:12px">— ya —</div><input id="qin" placeholder="Dusre device ka code (e.g. K7M2-9QXA)" autocomplete="off" autocapitalize="characters"><button class="b" id="qjn">🔗 Connect with code</button></div>'
  +'<div id="qh" style="display:none;flex-direction:column;gap:10px;width:100%;align-items:center"><div id="qrc"></div><div style="font-size:12px;color:var(--mut)">Ya ye code dusre device par daalein:</div><div id="qcode" style="font:700 26px/1 ui-monospace,Consolas,monospace;letter-spacing:.12em"></div><input id="qrl" autocomplete="off"></div>'
- +'<div id="qrs" style="font-size:12px;color:var(--mut);white-space:pre-line"></div>'
- +'<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center"><button class="b" id="qcc">Copy code</button><button class="b" id="qrcp">Copy link</button><button class="b" id="qadd">➕ Share current note too</button><button class="b" id="qrt">🔄 Retry now</button><button class="b" id="qrst">Stop sync</button><button class="nb" id="qrx">Close</button></div>'
- +'<details style="width:100%;text-align:left;font-size:12px"><summary style="cursor:pointer">🔧 Advanced (network check / TURN)</summary><div style="display:flex;flex-direction:column;gap:6px;margin-top:6px"><button class="b" id="qnt">Run network check</button><div id="qnr" style="white-space:pre-line;color:var(--mut)"></div><input id="qtu" placeholder="TURN url (optional) e.g. turn:host:443"><input id="qtn" placeholder="TURN username"><input id="qtc" placeholder="TURN password"><button class="b" id="qts">Save TURN</button></div></details></div>';
+ +'<div id="qrs" style="font-size:13px;color:var(--mut);white-space:pre-line"></div>'
+ +'<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center"><button class="b" id="qcc">Copy code</button><button class="b" id="qrcp">Copy link</button><button class="b" id="qrst">Stop sync</button><button class="nb" id="qrx">Close</button></div></div>';
  document.body.appendChild(m);
- try{var t=JSON.parse(localStorage.getItem(TK)||'null');if(t){$('qtu').value=t.u||'';$('qtn').value=t.n||'';$('qtc').value=t.c||''}}catch(e){}
- function cp(v,msg){if(navigator.clipboard)navigator.clipboard.writeText(v).then(function(){toast(msg)},function(){toast(v)});else toast(v)}
  $('qrx').onclick=function(){m.classList.remove('show')};
- $('qcc').onclick=function(){cp(CODE,'Code copied')};$('qrcp').onclick=function(){cp($('qrl').value,'Link copied')};
- $('qrst').onclick=function(){stop(false)};$('qsh').onclick=function(){startHost()};
+ function cp(v,msg){if(navigator.clipboard)navigator.clipboard.writeText(v).then(function(){toast(msg)},function(){toast(v)});else toast(v)}
+ $('qcc').onclick=function(){cp(CODE,'Code copied')};
+ $('qrcp').onclick=function(){cp($('qrl').value,'Link copied')};
+ $('qrst').onclick=stop;$('qsh').onclick=host;
  $('qjn').onclick=function(){var c=$('qin').value.toUpperCase().replace(/[^A-Z0-9]/g,'');if(c.length!==8)return toast('Code galat hai (8 characters hone chahiye)');join('n3gi-'+c)};
  $('qin').onkeydown=function(e){if(e.key==='Enter')$('qjn').click()};
- $('qrt').onclick=function(){health()};
- $('qadd').onclick=function(){var k=N3N.mark();if(!k)return toast('Locked note share nahi ho sakta');var x=snapMsg(k,0);lastSig[k]=sig(x);sendAll(x);toast('Note share ho gaya ✓');ui()};
- $('qnt').onclick=netTest;
- $('qts').onclick=function(){var u=$('qtu').value.trim();try{if(u)localStorage.setItem(TK,JSON.stringify({u:u,n:$('qtn').value.trim(),c:$('qtc').value.trim()}));else localStorage.removeItem(TK)}catch(e){}toast('TURN save hua — Sync stop karke dobara start karein')};
  $('qrl').oninput=draw;m.onclick=function(e){if(e.target===m)m.classList.remove('show')};return m}
-$('syncBtn').onclick=function(){modal().classList.add('show');if(role==='host'){$('qrl').value=link();$('qcode').textContent=fmt(CODE);draw()}ui()};
-function hashJoin(){var mt=location.hash.match(/#sync=([\w-]+)/);if(!mt)return false;history.replaceState(null,'',location.pathname+location.search);join(mt[1]);return true}
-window.addEventListener('hashchange',hashJoin);
-setTimeout(function(){if(hashJoin())return;
- try{var sv=JSON.parse(localStorage.getItem(SK)||'null');if(sv&&Date.now()-sv.ts<432e5){if(sv.role==='host'&&sv.code)startHost(sv.code);else if(sv.role==='guest'&&sv.pid)join(sv.pid,true)}}catch(e){}},500);
+function stop(){conns.forEach(function(c){try{c.close()}catch(e){}});try{peer&&peer.destroy()}catch(e){}peer=null;conns=[];role='';clearTimeout(jt);ui();var m=$('qrm');if(m)m.classList.remove('show');toast('Sync stopped')}
+function draw(){var b=$('qrc');b.innerHTML='';needQR().then(function(){new QRCode(b,{text:$('qrl').value,width:180,height:180,correctLevel:QRCode.CorrectLevel.M})},function(){b.textContent='QR load nahi hua — code use karein'})}
+function ui(){if(!$('qrs'))return;var h=role==='host',idle=!role;
+ $('qa').style.display=idle?'flex':'none';$('qh').style.display=h?'flex':'none';
+ $('qcc').style.display=h?'':'none';$('qrcp').style.display=h?'':'none';$('qrst').style.display=idle?'none':'';
+ var st=idle?'':conns.length?('✅ '+conns.length+' device connected — edits live sync ho rahe hain'):(h?'Dusre device se QR scan karein ya code daalein (waiting…)':'Connecting…');
+ if(h&&location.protocol==='file:')st+='\n⚠ Ye file local hai. QR/link dusre device par tabhi khulega jab file hosted ho (Netlify/GitHub Pages). Code se connect karne ke liye dusre device par bhi ye app kholna hoga.';
+ $('qrs').textContent=st}
+function host(){var c=N3N.cur();if(!c)return toast('Locked note sync nahi ho sakta — pehle unlock karein');
+ if(!c.sk)N3N.mark(c.id);
+ needPeer().then(function(){CODE=genCode();PID='n3gi-'+CODE;role='host';peer=new Peer(PID);ui();
+  peer.on('open',function(){modal().classList.add('show');$('qrl').value=link();$('qcode').textContent=fmt(CODE);draw();ui()});
+  peer.on('connection',function(cn){cn.on('open',function(){wire(cn);var m=snap();if(m){last=sig(m);cn.send(m)}ui();toast('Device connected ✓')})});
+  peer.on('disconnected',function(){try{peer.reconnect()}catch(e){}});
+  peer.on('error',function(e){if(e&&e.type==='unavailable-id'){try{peer.destroy()}catch(x){}peer=null;role='';host();return}toast('Sync error: '+(e&&e.type||'unknown'))})},function(){toast('Sync library load nahi hui (internet check karein)')})}
+function join(pid){modal().classList.add('show');
+ needPeer().then(function(){role='guest';ui();peer=new Peer();
+  jt=setTimeout(function(){if(!conns.length){toast('Connect nahi hua — code check karein, host device online hona chahiye');stop()}},15000);
+  peer.on('open',function(){var c=peer.connect(pid,{reliable:true});c.on('open',function(){clearTimeout(jt);wire(c);ui();toast('Connected — live sync ON ✓')})});
+  peer.on('error',function(e){clearTimeout(jt);var t=e&&e.type;toast(t==='peer-unavailable'?'Is code ka koi device nahi mila':'Connection fail: '+(t||'error'));stop()})},function(){toast('Sync library load nahi hui (internet check karein)')})}
+$('syncBtn').onclick=function(){modal().classList.add('show');if(role==='host'){$('qrl').value=link();draw()}ui()};
+var mt=location.hash.match(/#sync=([\w-]+)/);
+if(mt){history.replaceState(null,'',location.pathname+location.search);setTimeout(function(){join(mt[1])},500)}
 })();
 </script>
 </body>
